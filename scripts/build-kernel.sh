@@ -22,6 +22,7 @@ INPUT_ARCH="$1"
 case "$INPUT_ARCH" in
   arm64)
     KARCH="arm64"
+    IMAGE_BUILD_TARGET="Image"
     IMAGE_REL="arch/arm64/boot/Image"
     NATIVE_IMAGE_NAME="Image"
     VZ_KERNEL_FORMAT="linux-arm64-Image"
@@ -29,6 +30,7 @@ case "$INPUT_ARCH" in
     ;;
   x86_64)
     KARCH="x86"
+    IMAGE_BUILD_TARGET="bzImage"
     IMAGE_REL="arch/x86/boot/bzImage"
     NATIVE_IMAGE_NAME="bzImage"
     VZ_KERNEL_FORMAT="linux-x86-bzImage"
@@ -85,10 +87,18 @@ make -C "$SRC_DIR" O="$OUT_DIR" ARCH="$KARCH" LLVM="$LLVM_ARG" olddefconfig
 
 "$REPO_ROOT/scripts/verify-config.sh" "$OUT_DIR/.config" "$REPO_ROOT/tools/required-symbols.common"
 
-# Build only the bootable kernel image. A bare `make` also builds every
-# selected module, which is expensive when an upstream defconfig accidentally
-# enables broad hardware stacks such as DRM/GPU/audio drivers.
-make -C "$SRC_DIR" O="$OUT_DIR" ARCH="$KARCH" LLVM="$LLVM_ARG" -j"$JOBS" "$IMAGE_REL"
+# Build only the architecture's canonical boot image target.
+#
+# Do not pass the final path (for example arch/arm64/boot/Image) as the make
+# target here. With O= out-of-tree builds, kbuild expects the short arch target
+# names such as `Image` and `bzImage`; passing the output path can fail with
+# "No rule to make target ..." before compilation starts.
+make -C "$SRC_DIR" O="$OUT_DIR" ARCH="$KARCH" LLVM="$LLVM_ARG" -j"$JOBS" "$IMAGE_BUILD_TARGET"
+
+if [[ ! -f "$OUT_DIR/$IMAGE_REL" ]]; then
+  echo "built image not found: $OUT_DIR/$IMAGE_REL" >&2
+  exit 1
+fi
 
 # App-facing artifact contract:
 #   dist/<arch>/kernel
@@ -120,7 +130,9 @@ cat > "$ART_DIR/kernel-info.plist" <<PLIST
   <string>kernel</string>
   <key>NativeImageName</key>
   <string>$NATIVE_IMAGE_NAME</string>
-  <key>NativeImageTarget</key>
+  <key>NativeImageBuildTarget</key>
+  <string>$IMAGE_BUILD_TARGET</string>
+  <key>NativeImagePath</key>
   <string>$IMAGE_REL</string>
   <key>VirtualizationFrameworkBootLoader</key>
   <string>VZLinuxBootLoader</string>
