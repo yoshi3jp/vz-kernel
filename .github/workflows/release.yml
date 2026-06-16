@@ -46,7 +46,7 @@ jobs:
 
       - name: Smoke test
         run: |
-          ./scripts/make-test-initramfs.sh
+          ./scripts/make-test-initramfs.sh ${{ matrix.arch }}
           ./scripts/qemu-smoke.sh ${{ matrix.arch }}
 
       - name: Package artifact tarball

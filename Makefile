@@ -7,7 +7,7 @@ build:
 	KERNEL_REF=$(KERNEL_REF) ./scripts/build-kernel.sh $(ARCH)
 
 test-initramfs:
-	./scripts/make-test-initramfs.sh
+	./scripts/make-test-initramfs.sh $(ARCH)
 
 qemu-smoke: test-initramfs
 	./scripts/qemu-smoke.sh $(ARCH)

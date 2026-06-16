@@ -61,3 +61,17 @@ True Apple Virtualization.framework boot tests should run on self-hosted physica
 2. Prefer configuration fragments over kernel patches.
 3. Keep `patches/` empty until there is a proven Apple VZ or Droidspaces blocker.
 4. Keep boot/runtime-critical drivers built in, not modular.
+
+## App-facing kernel artifact
+
+Each architecture package exposes the same kernel path:
+
+```text
+dist/arm64/kernel
+dist/x86_64/kernel
+```
+
+The file has no extension and is not externally gzip-compressed. The native
+build output is still preserved beside it as `Image` on arm64 and `bzImage` on
+x86_64 for diagnostics, but future macOS app code should only need to pass the
+canonical `kernel` file to `VZLinuxBootLoader`.

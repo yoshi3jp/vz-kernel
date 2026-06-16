@@ -33,6 +33,7 @@ jobs:
 
       - name: Install build dependencies
         run: |
+          sudo dpkg --add-architecture arm64
           sudo apt-get update
           sudo apt-get install -y \
             bc bison flex git make rsync cpio gzip xz-utils zstd \
@@ -45,7 +46,7 @@ jobs:
         run: ./scripts/build-kernel.sh ${{ matrix.arch }}
 
       - name: Build smoke-test initramfs
-        run: ./scripts/make-test-initramfs.sh
+        run: ./scripts/make-test-initramfs.sh ${{ matrix.arch }}
 
       - name: QEMU smoke test
         run: ./scripts/qemu-smoke.sh ${{ matrix.arch }}
@@ -56,5 +57,5 @@ jobs:
           name: kernel-${{ matrix.arch }}-${{ env.KERNEL_REF }}
           path: |
             dist/${{ matrix.arch }}/**
-            test-initramfs.cpio.gz
+            dist/${{ matrix.arch }}/test-initramfs.cpio.gz
           if-no-files-found: error

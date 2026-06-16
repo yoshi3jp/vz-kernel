@@ -8,6 +8,7 @@ Usage: $0 <arm64|x86_64>
 Environment:
   LINUX_GIT    Linux git remote, default: https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
   KERNEL_REF   Branch/tag/commit to build, default: linux-6.12.y
+  KERNEL_BASE_CONFIG  Base kconfig target, default: allnoconfig
   WORK_DIR     Working directory, default: ./build
   DIST_DIR     Artifact directory, default: ./dist
   LLVM         LLVM selector for kbuild, default: 1
@@ -19,8 +20,20 @@ if [[ $# -ne 1 ]]; then usage >&2; exit 2; fi
 
 INPUT_ARCH="$1"
 case "$INPUT_ARCH" in
-  arm64) KARCH="arm64"; IMAGE_REL="arch/arm64/boot/Image" ;;
-  x86_64) KARCH="x86"; IMAGE_REL="arch/x86/boot/bzImage" ;;
+  arm64)
+    KARCH="arm64"
+    IMAGE_REL="arch/arm64/boot/Image"
+    NATIVE_IMAGE_NAME="Image"
+    VZ_KERNEL_FORMAT="linux-arm64-Image"
+    IMAGE_DESCRIPTION="AArch64 uncompressed Linux Image"
+    ;;
+  x86_64)
+    KARCH="x86"
+    IMAGE_REL="arch/x86/boot/bzImage"
+    NATIVE_IMAGE_NAME="bzImage"
+    VZ_KERNEL_FORMAT="linux-x86-bzImage"
+    IMAGE_DESCRIPTION="x86 Linux boot protocol bzImage"
+    ;;
   *) echo "unsupported arch: $INPUT_ARCH" >&2; exit 2 ;;
 esac
 
@@ -31,6 +44,7 @@ WORK_DIR="${WORK_DIR:-$REPO_ROOT/build}"
 DIST_DIR="${DIST_DIR:-$REPO_ROOT/dist}"
 LLVM_ARG="${LLVM:-1}"
 JOBS="${JOBS:-$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)}"
+KERNEL_BASE_CONFIG="${KERNEL_BASE_CONFIG:-allnoconfig}"
 
 SRC_DIR="$WORK_DIR/linux-$KERNEL_REF"
 OUT_DIR="$WORK_DIR/out-$INPUT_ARCH"
@@ -47,8 +61,8 @@ else
   git -C "$SRC_DIR" checkout -q FETCH_HEAD
 fi
 
-rm -rf "$OUT_DIR"
-mkdir -p "$OUT_DIR"
+rm -rf "$OUT_DIR" "$ART_DIR"
+mkdir -p "$OUT_DIR" "$ART_DIR"
 
 export KBUILD_BUILD_USER="droidspaces"
 export KBUILD_BUILD_HOST="github-actions"
@@ -57,7 +71,7 @@ export SOURCE_DATE_EPOCH="0"
 export KCFLAGS="-fdebug-prefix-map=$SRC_DIR=/usr/src/linux -fdebug-prefix-map=$OUT_DIR=/usr/src/linux-build"
 export KAFLAGS="$KCFLAGS"
 
-make -C "$SRC_DIR" O="$OUT_DIR" ARCH="$KARCH" LLVM="$LLVM_ARG" defconfig
+make -C "$SRC_DIR" O="$OUT_DIR" ARCH="$KARCH" LLVM="$LLVM_ARG" "$KERNEL_BASE_CONFIG"
 
 bash "$SRC_DIR/scripts/kconfig/merge_config.sh" \
   -m \
@@ -71,9 +85,18 @@ make -C "$SRC_DIR" O="$OUT_DIR" ARCH="$KARCH" LLVM="$LLVM_ARG" olddefconfig
 
 "$REPO_ROOT/scripts/verify-config.sh" "$OUT_DIR/.config" "$REPO_ROOT/tools/required-symbols.common"
 
-make -C "$SRC_DIR" O="$OUT_DIR" ARCH="$KARCH" LLVM="$LLVM_ARG" -j"$JOBS"
+# Build only the bootable kernel image. A bare `make` also builds every
+# selected module, which is expensive when an upstream defconfig accidentally
+# enables broad hardware stacks such as DRM/GPU/audio drivers.
+make -C "$SRC_DIR" O="$OUT_DIR" ARCH="$KARCH" LLVM="$LLVM_ARG" -j"$JOBS" "$IMAGE_REL"
 
-cp "$OUT_DIR/$IMAGE_REL" "$ART_DIR/"
+# App-facing artifact contract:
+#   dist/<arch>/kernel
+# The native build target differs by architecture, but the macOS app should not
+# need to special-case Image vs bzImage. It always passes this extensionless
+# kernel file to VZLinuxBootLoader.
+cp "$OUT_DIR/$IMAGE_REL" "$ART_DIR/kernel"
+cp "$OUT_DIR/$IMAGE_REL" "$ART_DIR/$NATIVE_IMAGE_NAME"
 cp "$OUT_DIR/.config" "$ART_DIR/config"
 cp "$OUT_DIR/System.map" "$ART_DIR/System.map"
 make -s -C "$SRC_DIR" O="$OUT_DIR" ARCH="$KARCH" LLVM="$LLVM_ARG" kernelrelease > "$ART_DIR/kernel-release.txt"
@@ -81,9 +104,40 @@ make -s -C "$SRC_DIR" O="$OUT_DIR" ARCH="$KARCH" LLVM="$LLVM_ARG" kernelrelease 
 git -C "$SRC_DIR" rev-parse HEAD > "$ART_DIR/linux-commit.txt"
 printf '%s\n' "$KERNEL_REF" > "$ART_DIR/linux-ref.txt"
 
+cat > "$ART_DIR/kernel-info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+ "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>ArtifactVersion</key>
+  <integer>1</integer>
+  <key>Architecture</key>
+  <string>$INPUT_ARCH</string>
+  <key>LinuxArchitecture</key>
+  <string>$KARCH</string>
+  <key>KernelPath</key>
+  <string>kernel</string>
+  <key>NativeImageName</key>
+  <string>$NATIVE_IMAGE_NAME</string>
+  <key>NativeImageTarget</key>
+  <string>$IMAGE_REL</string>
+  <key>VirtualizationFrameworkBootLoader</key>
+  <string>VZLinuxBootLoader</string>
+  <key>KernelFormat</key>
+  <string>$VZ_KERNEL_FORMAT</string>
+  <key>ImageDescription</key>
+  <string>$IMAGE_DESCRIPTION</string>
+  <key>ExternallyCompressed</key>
+  <false/>
+</dict>
+</plist>
+PLIST
+
 (
   cd "$ART_DIR"
   sha256sum * > SHA256SUMS
 )
 
 echo "==> Artifacts written to $ART_DIR"
+echo "==> App-facing kernel path: $ART_DIR/kernel"

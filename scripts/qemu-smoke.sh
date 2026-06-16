@@ -8,23 +8,23 @@ fi
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ARCH="$1"
-INITRD="${INITRD:-$REPO_ROOT/test-initramfs.cpio.gz}"
+INITRD="${INITRD:-$REPO_ROOT/dist/$ARCH/test-initramfs.cpio.gz}"
 LOG_DIR="$REPO_ROOT/dist/$ARCH"
 mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/qemu-smoke.log"
 
 if [[ ! -f "$INITRD" ]]; then
-  "$REPO_ROOT/scripts/make-test-initramfs.sh" "$INITRD"
+  "$REPO_ROOT/scripts/make-test-initramfs.sh" "$ARCH" "$INITRD"
 fi
 
 case "$ARCH" in
   arm64)
-    KERNEL="$REPO_ROOT/dist/arm64/Image"
+    KERNEL="$REPO_ROOT/dist/arm64/kernel"
     QEMU=qemu-system-aarch64
     CMD=(timeout 90s "$QEMU" -machine virt -cpu max -m 512M -kernel "$KERNEL" -initrd "$INITRD" -append "console=ttyAMA0 panic=-1" -nographic -no-reboot)
     ;;
   x86_64)
-    KERNEL="$REPO_ROOT/dist/x86_64/bzImage"
+    KERNEL="$REPO_ROOT/dist/x86_64/kernel"
     QEMU=qemu-system-x86_64
     CMD=(timeout 90s "$QEMU" -machine q35 -cpu max -m 512M -kernel "$KERNEL" -initrd "$INITRD" -append "console=ttyS0 panic=-1" -nographic -no-reboot)
     ;;

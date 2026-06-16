@@ -33,3 +33,26 @@ The kernel must support:
 - GPU/audio/USB device passthrough
 - Wi-Fi/Bluetooth/device-driver coverage
 - maintaining a permanent Linux fork
+
+## Kernel artifact contract
+
+The build output deliberately presents the same app-facing artifact layout for
+both supported architectures:
+
+```text
+dist/<arch>/kernel
+dist/<arch>/kernel-info.plist
+dist/<arch>/config
+dist/<arch>/System.map
+```
+
+The native Linux build target is architecture-specific (`Image` on arm64,
+`bzImage` on x86_64), but the macOS application should treat `kernel` as the
+only file that is passed to `VZLinuxBootLoader`. The native file is also copied
+next to it for debugging and human inspection, but it is not the app contract.
+
+`kernel` must not be wrapped in an external compression format such as gzip.
+For arm64 this means using the uncompressed `Image` target. For x86_64 this
+means using the Linux boot-protocol `bzImage` target as produced by kbuild; it
+is self-extracting according to the x86 Linux boot protocol and should not be
+renamed to `.gz` or manually unpacked into `vmlinux` for the VZ boot path.
