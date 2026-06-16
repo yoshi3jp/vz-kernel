@@ -1,0 +1,62 @@
+name: release-kernel
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: Linux stable branch/tag to build
+        required: false
+        default: linux-6.12.y
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    name: release ${{ matrix.arch }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x86_64]
+
+    env:
+      KERNEL_REF: ${{ github.event.inputs.kernel_ref || 'linux-6.12.y' }}
+      LLVM: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex git make rsync cpio gzip xz-utils zstd \
+            libssl-dev libelf-dev libncurses-dev dwarves \
+            clang lld llvm \
+            busybox-static \
+            qemu-system-x86 qemu-system-arm
+
+      - name: Build kernel
+        run: ./scripts/build-kernel.sh ${{ matrix.arch }}
+
+      - name: Smoke test
+        run: |
+          ./scripts/make-test-initramfs.sh
+          ./scripts/qemu-smoke.sh ${{ matrix.arch }}
+
+      - name: Package artifact tarball
+        run: |
+          tar -C dist/${{ matrix.arch }} -caf kernel-${{ matrix.arch }}-${{ env.KERNEL_REF }}.tar.zst .
+          sha256sum kernel-${{ matrix.arch }}-${{ env.KERNEL_REF }}.tar.zst > kernel-${{ matrix.arch }}-${{ env.KERNEL_REF }}.tar.zst.sha256
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            kernel-${{ matrix.arch }}-${{ env.KERNEL_REF }}.tar.zst
+            kernel-${{ matrix.arch }}-${{ env.KERNEL_REF }}.tar.zst.sha256

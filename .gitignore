@@ -1,0 +1,6 @@
+.kernel-src/
+build/
+dist/
+test-initramfs.cpio.gz
+*.log
+.DS_Store

@@ -1,0 +1,60 @@
+name: build-kernel
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      kernel_ref:
+        description: Linux stable branch/tag to build
+        required: false
+        default: linux-6.12.y
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: build ${{ matrix.arch }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, x86_64]
+
+    env:
+      KERNEL_REF: ${{ github.event.inputs.kernel_ref || 'linux-6.12.y' }}
+      LLVM: '1'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex git make rsync cpio gzip xz-utils zstd \
+            libssl-dev libelf-dev libncurses-dev dwarves \
+            clang lld llvm \
+            busybox-static \
+            qemu-system-x86 qemu-system-arm
+
+      - name: Build kernel
+        run: ./scripts/build-kernel.sh ${{ matrix.arch }}
+
+      - name: Build smoke-test initramfs
+        run: ./scripts/make-test-initramfs.sh
+
+      - name: QEMU smoke test
+        run: ./scripts/qemu-smoke.sh ${{ matrix.arch }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-${{ matrix.arch }}-${{ env.KERNEL_REF }}
+          path: |
+            dist/${{ matrix.arch }}/**
+            test-initramfs.cpio.gz
+          if-no-files-found: error
