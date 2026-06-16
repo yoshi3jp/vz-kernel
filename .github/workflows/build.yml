@@ -33,13 +33,11 @@ jobs:
 
       - name: Install build dependencies
         run: |
-          sudo dpkg --add-architecture arm64
           sudo apt-get update
           sudo apt-get install -y \
-            bc bison flex git make rsync cpio gzip xz-utils zstd \
+            bc bison flex git make rsync cpio gzip xz-utils zstd file \
             libssl-dev libelf-dev libncurses-dev dwarves \
             clang lld llvm \
-            busybox-static \
             qemu-system-x86 qemu-system-arm
 
       - name: Build kernel
