@@ -1,22 +1,23 @@
 name: release-kernel
 
 on:
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
     inputs:
       kernel_ref:
-        description: Linux stable branch/tag to build
+        description: Linux stable branch/tag/commit to build
         required: false
         default: linux-6.12.y
 
 permissions:
   contents: write
 
+env:
+  KERNEL_REF: ${{ inputs.kernel_ref || 'linux-6.12.y' }}
+  LLVM: '1'
+
 jobs:
-  build-release:
-    name: release ${{ matrix.arch }}
+  build:
+    name: build release asset ${{ matrix.arch }}
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     strategy:
@@ -24,39 +25,175 @@ jobs:
       matrix:
         arch: [arm64, x86_64]
 
-    env:
-      KERNEL_REF: ${{ github.event.inputs.kernel_ref || 'linux-6.12.y' }}
-      LLVM: '1'
-
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            bc bison flex git make rsync cpio gzip xz-utils zstd \
+            bc bison flex git make rsync cpio gzip xz-utils zstd file \
             libssl-dev libelf-dev libncurses-dev dwarves \
             clang lld llvm \
-            busybox-static \
             qemu-system-x86 qemu-system-arm
 
       - name: Build kernel
         run: ./scripts/build-kernel.sh ${{ matrix.arch }}
 
+      - name: Build smoke-test initramfs
+        run: ./scripts/make-test-initramfs.sh ${{ matrix.arch }}
+
       - name: Smoke test
-        run: |
-          ./scripts/make-test-initramfs.sh ${{ matrix.arch }}
-          ./scripts/qemu-smoke.sh ${{ matrix.arch }}
+        run: ./scripts/qemu-smoke.sh ${{ matrix.arch }}
 
-      - name: Package artifact tarball
+      - name: Package release asset
+        id: package
+        shell: bash
         run: |
-          tar -C dist/${{ matrix.arch }} -caf kernel-${{ matrix.arch }}-${{ env.KERNEL_REF }}.tar.zst .
-          sha256sum kernel-${{ matrix.arch }}-${{ env.KERNEL_REF }}.tar.zst > kernel-${{ matrix.arch }}-${{ env.KERNEL_REF }}.tar.zst.sha256
+          set -euo pipefail
+          arch='${{ matrix.arch }}'
+          kernel_release="$(cat "dist/$arch/kernel-release.txt")"
+          linux_commit="$(cat "dist/$arch/linux-commit.txt")"
+          asset="kernel-${arch}-${kernel_release}.tar.zst"
 
-      - name: Upload release assets
-        uses: softprops/action-gh-release@v2
+          tar -C "dist/$arch" -caf "$asset" .
+          sha256sum "$asset" > "$asset.sha256"
+
+          {
+            echo "kernel_release=$kernel_release"
+            echo "linux_commit=$linux_commit"
+            echo "asset=$asset"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload packaged asset
+        uses: actions/upload-artifact@v4
         with:
-          files: |
-            kernel-${{ matrix.arch }}-${{ env.KERNEL_REF }}.tar.zst
-            kernel-${{ matrix.arch }}-${{ env.KERNEL_REF }}.tar.zst.sha256
+          name: release-asset-${{ matrix.arch }}
+          path: |
+            kernel-${{ matrix.arch }}-*.tar.zst
+            kernel-${{ matrix.arch }}-*.tar.zst.sha256
+          if-no-files-found: error
+
+      - name: Upload release metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-meta-${{ matrix.arch }}
+          path: |
+            dist/${{ matrix.arch }}/kernel-release.txt
+            dist/${{ matrix.arch }}/linux-commit.txt
+            dist/${{ matrix.arch }}/linux-ref.txt
+          if-no-files-found: error
+
+  publish:
+    name: create tag and publish release
+    runs-on: ubuntu-24.04
+    needs: build
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download packaged assets
+        uses: actions/download-artifact@v4
+        with:
+          path: release-work
+
+      - name: Derive release tag
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          arm64_release="$(cat release-work/release-meta-arm64/kernel-release.txt)"
+          x86_64_release="$(cat release-work/release-meta-x86_64/kernel-release.txt)"
+          arm64_commit="$(cat release-work/release-meta-arm64/linux-commit.txt)"
+          x86_64_commit="$(cat release-work/release-meta-x86_64/linux-commit.txt)"
+
+          if [[ "$arm64_release" != "$x86_64_release" ]]; then
+            echo "kernel release mismatch: arm64=$arm64_release x86_64=$x86_64_release" >&2
+            exit 1
+          fi
+
+          if [[ "$arm64_commit" != "$x86_64_commit" ]]; then
+            echo "linux commit mismatch: arm64=$arm64_commit x86_64=$x86_64_commit" >&2
+            exit 1
+          fi
+
+          kernel_release="$arm64_release"
+          linux_commit="$arm64_commit"
+          tag="v${kernel_release}"
+
+          # If this repository later needs config-only rebuilds for the same
+          # upstream kernel release, change this to v${kernel_release}-ds<N>.
+          {
+            echo "kernel_release=$kernel_release"
+            echo "linux_commit=$linux_commit"
+            echo "tag=$tag"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create git tag if missing
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          KERNEL_RELEASE: ${{ steps.release.outputs.kernel_release }}
+          LINUX_COMMIT: ${{ steps.release.outputs.linux_commit }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "tag already exists: $TAG"
+          else
+            git tag -a "$TAG" -m "Droidspaces VZ kernel $KERNEL_RELEASE
+
+Upstream Linux commit: $LINUX_COMMIT
+Kernel ref: $KERNEL_REF"
+            git push origin "refs/tags/$TAG"
+          fi
+
+      - name: Collect assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          find release-work -type f \( -name 'kernel-*.tar.zst' -o -name 'kernel-*.tar.zst.sha256' \) \
+            -exec cp '{}' release-assets/ \;
+          ls -la release-assets
+
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          KERNEL_RELEASE: ${{ steps.release.outputs.kernel_release }}
+          LINUX_COMMIT: ${{ steps.release.outputs.linux_commit }}
+        run: |
+          set -euo pipefail
+
+          title="Droidspaces VZ kernel $KERNEL_RELEASE"
+          notes="$(cat <<EOF
+          Droidspaces VZ kernel build.
+
+          - Kernel release: $KERNEL_RELEASE
+          - Upstream Linux ref: $KERNEL_REF
+          - Upstream Linux commit: $LINUX_COMMIT
+          - Architectures: arm64, x86_64
+          - App-facing kernel artifact inside each tarball: kernel
+          EOF
+          )"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$title" --notes "$notes"
+          else
+            gh release create "$TAG" --title "$title" --notes "$notes"
+          fi
+
+          gh release upload "$TAG" release-assets/* --clobber
