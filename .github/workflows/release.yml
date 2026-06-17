@@ -152,11 +152,11 @@ jobs:
           if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
             echo "tag already exists: $TAG"
           else
-            cat > tag-message.txt <<EOF
-            Droidspaces VZ kernel $KERNEL_RELEASE
-            Upstream Linux commit: $LINUX_COMMIT
-            Kernel ref: $KERNEL_REF
-            EOF
+            {
+              printf 'Droidspaces VZ kernel %s\n\n' "$KERNEL_RELEASE"
+              printf 'Upstream Linux commit: %s\n' "$LINUX_COMMIT"
+              printf 'Kernel ref: %s\n' "$KERNEL_REF"
+            } > tag-message.txt
 
             git tag -a "$TAG" -F tag-message.txt
             git push origin "refs/tags/$TAG"
