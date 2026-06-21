@@ -14,11 +14,12 @@ This repository intentionally does **not** vendor the Linux kernel source and do
 The kernel is optimized for:
 
 - Apple Virtualization.framework direct Linux boot
+- ACPI, PCI, PCI MSI, and relocatable-kernel placement support
 - VirtIO block, network, console, filesystem, entropy, and vsock devices
 - Droidspaces container primitives: namespaces, cgroups, devpts, loop images, OverlayFS, veth/bridge, NAT/netfilter
 - sparse raw ext4/f2fs images used as container backing stores
 
-The repository starts from each architecture's upstream `defconfig`, then merges:
+The repository starts from upstream `allnoconfig`, then merges:
 
 ```text
 configs/apple-vz.config

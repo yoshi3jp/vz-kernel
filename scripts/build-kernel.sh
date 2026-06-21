@@ -100,6 +100,11 @@ if [[ ! -f "$OUT_DIR/$IMAGE_REL" ]]; then
   exit 1
 fi
 
+# Verify the produced boot image rather than relying only on Kconfig. In
+# particular, CONFIG_RELOCATABLE=y must become relocatable_kernel=1 in the x86
+# bzImage header consumed by VZLinuxBootLoader.
+python3 "$REPO_ROOT/scripts/verify-boot-image.py" "$INPUT_ARCH" "$OUT_DIR/$IMAGE_REL"
+
 # App-facing artifact contract:
 #   dist/<arch>/kernel
 # The native build target differs by architecture, but the macOS app should not

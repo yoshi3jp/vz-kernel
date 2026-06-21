@@ -16,6 +16,7 @@ This repository is concerned only with the kernel.
 The kernel must support:
 
 - direct Linux boot with initramfs
+- ACPI, PCI, PCI MSI, and relocatable kernel placement for VZ boot loaders
 - serial console suitable for `console=hvc0`
 - VirtIO block device for optional persistent data disks
 - VirtIO network device for VM uplink
