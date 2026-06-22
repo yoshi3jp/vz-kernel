@@ -8,7 +8,7 @@ on:
       kernel_ref:
         description: Linux stable branch/tag to build
         required: false
-        default: linux-6.12.y
+        default: linux-7.1.y
 
 permissions:
   contents: read
@@ -24,7 +24,7 @@ jobs:
         arch: [arm64, x86_64]
 
     env:
-      KERNEL_REF: ${{ github.event.inputs.kernel_ref || 'linux-6.12.y' }}
+      KERNEL_REF: ${{ github.event.inputs.kernel_ref || 'linux-7.1.y' }}
       LLVM: '1'
 
     steps:

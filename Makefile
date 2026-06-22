@@ -1,5 +1,5 @@
 ARCH ?= arm64
-KERNEL_REF ?= linux-6.12.y
+KERNEL_REF ?= linux-7.1.y
 
 .PHONY: build package test-initramfs qemu-smoke clean
 

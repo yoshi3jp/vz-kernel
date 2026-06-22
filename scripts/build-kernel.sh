@@ -7,7 +7,7 @@ Usage: $0 <arm64|x86_64>
 
 Environment:
   LINUX_GIT    Linux git remote, default: https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
-  KERNEL_REF   Branch/tag/commit to build, default: linux-6.12.y
+  KERNEL_REF   Branch/tag/commit to build, default: linux-7.1.y
   KERNEL_BASE_CONFIG  Base kconfig target, default: allnoconfig
   WORK_DIR     Working directory, default: ./build
   DIST_DIR     Artifact directory, default: ./dist
@@ -41,7 +41,7 @@ esac
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LINUX_GIT="${LINUX_GIT:-https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git}"
-KERNEL_REF="${KERNEL_REF:-linux-6.12.y}"
+KERNEL_REF="${KERNEL_REF:-linux-7.1.y}"
 WORK_DIR="${WORK_DIR:-$REPO_ROOT/build}"
 DIST_DIR="${DIST_DIR:-$REPO_ROOT/dist}"
 LLVM_ARG="${LLVM:-1}"

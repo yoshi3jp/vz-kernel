@@ -11,6 +11,17 @@ macOS
 
 This repository is concerned only with the kernel.
 
+## Upstream-series policy
+
+`main` targets `linux-7.1.y`. The proven `linux-6.12.y` configuration remains
+on the `6.12` archive branch for recovery and regression comparison.
+`linux-6.18.y` is the supported long-term fallback selected explicitly with
+`KERNEL_REF`; it is not the default for `main`.
+
+Both architecture builds set `CONFIG_NR_CPUS=64`. This is a kernel ceiling,
+not a request to create a 64-vCPU VM; the macOS launcher remains responsible
+for selecting an appropriate vCPU count for each VM.
+
 ## Kernel contract
 
 The kernel must support:
